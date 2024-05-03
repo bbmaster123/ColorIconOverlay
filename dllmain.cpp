@@ -8,6 +8,9 @@
 #pragma comment(lib, "shlwapi.lib")
 #include <vector>
 #include <string>
+#include <propsys.h>
+#include <propkey.h>
+
 
 
 // {{6C12361D-4679-4B0C-98DF-9901E2E15294}}
@@ -213,7 +216,7 @@ STDAPI DllRegisterServer()
 
     // Register the in-process component.
     HRESULT hr = RegisterInprocServer(szModule, CLSID_IconOverlay,
-        L"Your Icon Overlay", L"Apartment");
+        L"Icon Color Overlay", L"Apartment");
     if (SUCCEEDED(hr))
     {
         // Register the icon overlay handler.
@@ -235,7 +238,7 @@ STDAPI DllUnregisterServer()
         // Unregister the icon overlay handler.
         wchar_t szSubkey[MAX_PATH];
         hr = StringCchPrintf(szSubkey, ARRAYSIZE(szSubkey),
-            L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\ShellIconOverlayIdentifiers\\Your Icon Overlay");
+            L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\ShellIconOverlayIdentifiers\\Color Icon Overlay");
         if (SUCCEEDED(hr))
         {
             LONG lRet = RegDeleteTree(HKEY_LOCAL_MACHINE, szSubkey);
@@ -307,11 +310,11 @@ IFACEMETHODIMP IconColorContextMenuHandler::InvokeCommand(LPCMINVOKECOMMANDINFO 
         switch (idCmd)
         {
             case ID_RED:
-                // Code to change the icon color to red
-                break;
+              ChangeIcon("path_to_red_icon.ico");
+    break;
             case ID_GREEN:
-                // Code to change the icon color to green
-                break;
+               ChangeIcon("path_to_Green_icon.ico");
+    break;
             // ... other cases for different colors
             default:
                 return E_FAIL; // Command ID not recognized
@@ -321,8 +324,6 @@ IFACEMETHODIMP IconColorContextMenuHandler::InvokeCommand(LPCMINVOKECOMMANDINFO 
     return E_FAIL; // If the command ID is not recognized
 }
 
-// Implementation of IContextMenu::GetCommandString
-// ...
 
 // Implementation of IconColorContextMenuHandler::AddColorOptions
 void IconColorContextMenuHandler::AddColorOptions(HMENU hSubMenu)
@@ -333,3 +334,18 @@ void IconColorContextMenuHandler::AddColorOptions(HMENU hSubMenu)
     }
 }
 
+HRESULT ChangeIcon(PCWSTR pwszPath, const std::wstring& color) {
+   
+    HRESULT WriteColorToMetadata(PCWSTR pwszPath, const std::wstring& color) {
+    // Obtain IPropertyStore for the file and write the color
+    // ...
+    return S_OK; // or appropriate error code
+}
+    HRESULT ReadColorFromMetadata(PCWSTR pwszPath, std::wstring& color) {
+    // Obtain IPropertyStore for the file and read the color
+    // ...
+    return S_OK; // or appropriate error code
+}
+
+    return S_OK; // or appropriate error code
+}
