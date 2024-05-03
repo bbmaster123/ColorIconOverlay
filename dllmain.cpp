@@ -10,6 +10,7 @@
 #include <string>
 #include <propsys.h>
 #include <propkey.h>
+#include <propvarutil.h>
 
 
 
@@ -335,17 +336,33 @@ void IconColorContextMenuHandler::AddColorOptions(HMENU hSubMenu)
 }
 
 HRESULT ChangeIcon(PCWSTR pwszPath, const std::wstring& color) {
-   
-    HRESULT WriteColorToMetadata(PCWSTR pwszPath, const std::wstring& color) {
-    // Obtain IPropertyStore for the file and write the color
-    // ...
-    return S_OK; // or appropriate error code
-}
-    HRESULT ReadColorFromMetadata(PCWSTR pwszPath, std::wstring& color) {
-    // Obtain IPropertyStore for the file and read the color
-    // ...
-    return S_OK; // or appropriate error code
+    // Write the new color to the file's metadata
+    HRESULT WriteColorToComment(PCWSTR pwszPath, const std::wstring& color) {
+    IPropertyStore* pPropStore = nullptr;
+    HRESULT hr = SHGetPropertyStoreFromParsingName(pwszPath, NULL, GPS_READWRITE, IID_PPV_ARGS(&pPropStore));
+    if (SUCCEEDED(hr)) {
+        PROPVARIANT propvarValue;
+        InitPropVariantFromString(color.c_str(), &propvarValue);
+        hr = pPropStore->SetValue(PKEY_Comment, propvarValue);
+        if (SUCCEEDED(hr)) {
+            hr = pPropStore->Commit();
+        }
+        PropVariantClear(&propvarValue);
+    }
+    if (pPropStore) pPropStore->Release();
+    return hr;
 }
 
-    return S_OK; // or appropriate error code
+
+    // Read the color back to confirm the change
+    std::wstring confirmedColor;
+    hr = ReadColorFromMetadata(pwszPath, confirmedColor);
+    if (FAILED(hr)) {
+        return hr; // Return the error code if reading failed
+    }
+
+    // Optionally, compare 'color' and 'confirmedColor' to ensure they match
+    // ...
+
+    return S_OK; // Return success code if everything went well
 }
