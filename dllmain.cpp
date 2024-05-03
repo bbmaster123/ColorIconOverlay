@@ -66,11 +66,20 @@ public:
         return S_OK;
     }
 
-    IFACEMETHODIMP IsMemberOf(PCWSTR pwszPath, DWORD dwAttrib)
+   IFACEMETHODIMP IsMemberOf(PCWSTR pwszPath, DWORD dwAttrib)
+{
+    // Check if the path is a file
+    if (dwAttrib & FILE_ATTRIBUTE_DIRECTORY)
     {
-        // Add your own logic here to determine whether to show the overlay icon
-        return S_OK;
+        // It's a directory (folder)
+        return S_FALSE; // Return S_FALSE for folders
     }
+    else
+    {
+        // It's a file
+        return S_OK; // Return S_OK for files
+    }
+}
 
 private:
     ~CIconOverlay() {}
@@ -287,8 +296,30 @@ IFACEMETHODIMP IconColorContextMenuHandler::QueryContextMenu(HMENU hMenu, UINT i
     return MAKE_HRESULT(SEVERITY_SUCCESS, FACILITY_NULL, m_colors.size());
 }
 
-// Implementation of IContextMenu::InvokeCommand
-// ...
+IFACEMETHODIMP IconColorContextMenuHandler::InvokeCommand(LPCMINVOKECOMMANDINFO pici)
+{
+    // Ensure this is not an offset but the actual command ID
+    if (!HIWORD(pici->lpVerb))
+    {
+        UINT idCmd = LOWORD(pici->lpVerb);
+
+        // Execute the command corresponding to the menu item selected by the user
+        switch (idCmd)
+        {
+            case ID_RED:
+                // Code to change the icon color to red
+                break;
+            case ID_GREEN:
+                // Code to change the icon color to green
+                break;
+            // ... other cases for different colors
+            default:
+                return E_FAIL; // Command ID not recognized
+        }
+        return S_OK;
+    }
+    return E_FAIL; // If the command ID is not recognized
+}
 
 // Implementation of IContextMenu::GetCommandString
 // ...
