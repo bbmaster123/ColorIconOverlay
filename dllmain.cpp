@@ -6,6 +6,8 @@
 #include <new>
 #include <Initguid.h>
 #pragma comment(lib, "shlwapi.lib")
+#include <vector>
+#include <string>
 
 
 // {{6C12361D-4679-4B0C-98DF-9901E2E15294}}
@@ -96,12 +98,12 @@ HRESULT RegisterInprocServer(PCWSTR pszModule, const CLSID& clsid,
 
     HRESULT hr;
 
-    wchar_t szCLSID[MAX_PATH];
+    wchar_t L"{6C12361D-4679-4B0C-98DF-9901E2E15294}"[MAX_PATH];
 
 
     wchar_t szSubkey[MAX_PATH];
     hr = StringCchPrintf(szSubkey, ARRAYSIZE(szSubkey),
-        L"CLSID\\%s", szCLSID);
+        L"CLSID\\%s", L"{6C12361D-4679-4B0C-98DF-9901E2E15294}");
     if (SUCCEEDED(hr))
     {
         hr = HRESULT_FROM_WIN32(RegSetKeyValue(
@@ -114,7 +116,7 @@ HRESULT RegisterInprocServer(PCWSTR pszModule, const CLSID& clsid,
         if (SUCCEEDED(hr))
         {
             hr = StringCchPrintf(szSubkey, ARRAYSIZE(szSubkey),
-                L"CLSID\\%s\\InprocServer32", szCLSID);
+                L"CLSID\\%s\\InprocServer32", L"{6C12361D-4679-4B0C-98DF-9901E2E15294}");
             if (SUCCEEDED(hr))
             {
                 hr = HRESULT_FROM_WIN32(RegSetKeyValue(
@@ -145,11 +147,11 @@ HRESULT UnregisterInprocServer(const CLSID& clsid)
 {
     HRESULT hr = S_OK;
 
-    WCHAR szCLSID[MAX_PATH];
+    WCHAR L"{6C12361D-4679-4B0C-98DF-9901E2E15294}"[MAX_PATH];
 
 
     WCHAR szSubkey[MAX_PATH];
-    hr = StringCchPrintf(szSubkey, ARRAYSIZE(szSubkey), L"CLSID\\%s", szCLSID);
+    hr = StringCchPrintf(szSubkey, ARRAYSIZE(szSubkey), L"CLSID\\%s", L"{6C12361D-4679-4B0C-98DF-9901E2E15294}");
     if (SUCCEEDED(hr))
     {
         hr = HRESULT_FROM_WIN32(RegDeleteTree(HKEY_CLASSES_ROOT, szSubkey));
@@ -235,3 +237,68 @@ STDAPI DllUnregisterServer()
 
     return hr;
 }
+
+
+
+class IconColorContextMenuHandler : public IShellExtInit, public IContextMenu
+{
+public:
+    // IUnknown methods
+    IFACEMETHODIMP QueryInterface(REFIID riid, void **ppv);
+    IFACEMETHODIMP_(ULONG) AddRef();
+    IFACEMETHODIMP_(ULONG) Release();
+
+    // IShellExtInit methods
+    IFACEMETHODIMP Initialize(LPCITEMIDLIST pidlFolder, LPDATAOBJECT pDataObj, HKEY hKeyProgID);
+
+    // IContextMenu methods
+    IFACEMETHODIMP QueryContextMenu(HMENU hMenu, UINT indexMenu, UINT idCmdFirst, UINT idCmdLast, UINT uFlags);
+    IFACEMETHODIMP InvokeCommand(LPCMINVOKECOMMANDINFO pici);
+    IFACEMETHODIMP GetCommandString(UINT_PTR idCmd, UINT uType, UINT *pReserved, LPSTR pszName, UINT cchMax);
+
+    IconColorContextMenuHandler() : m_refCount(1) {}
+
+private:
+    ~IconColorContextMenuHandler() {}
+    long m_refCount;
+    std::vector<std::wstring> m_colors{ L"Red", L"Green", L"Blue", L"Yellow", L"Purple", L"Orange", L"None" };
+
+    // Helper function to add color options to the context menu
+    void AddColorOptions(HMENU hSubMenu);
+};
+
+// Implementation of IShellExtInit::Initialize
+// ...
+
+// Implementation of IContextMenu::QueryContextMenu
+IFACEMETHODIMP IconColorContextMenuHandler::QueryContextMenu(HMENU hMenu, UINT indexMenu, UINT idCmdFirst, UINT idCmdLast, UINT uFlags)
+{
+    // Only display the context menu when right-clicking
+    if (uFlags & CMF_DEFAULTONLY)
+        return MAKE_HRESULT(SEVERITY_SUCCESS, FACILITY_NULL, 0);
+
+    HMENU hSubMenu = CreatePopupMenu();
+    if (!hSubMenu)
+        return E_OUTOFMEMORY;
+
+    AddColorOptions(hSubMenu);
+
+    InsertMenu(hMenu, indexMenu, MF_BYPOSITION | MF_POPUP, (UINT_PTR)hSubMenu, L"Icon Color");
+    return MAKE_HRESULT(SEVERITY_SUCCESS, FACILITY_NULL, m_colors.size());
+}
+
+// Implementation of IContextMenu::InvokeCommand
+// ...
+
+// Implementation of IContextMenu::GetCommandString
+// ...
+
+// Implementation of IconColorContextMenuHandler::AddColorOptions
+void IconColorContextMenuHandler::AddColorOptions(HMENU hSubMenu)
+{
+    for (size_t i = 0; i < m_colors.size(); ++i)
+    {
+        InsertMenu(hSubMenu, i, MF_BYPOSITION, i, m_colors[i].c_str());
+    }
+}
+
