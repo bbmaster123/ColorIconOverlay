@@ -11,6 +11,7 @@
 #include <propsys.h>
 #include <propkey.h>
 #include <propvarutil.h>
+#include <STDDEF.h>
 
 
 
@@ -19,6 +20,52 @@
 DEFINE_GUID(CLSID_IconOverlay,
     0x6C12361D, 0x4679, 0x4B0C,
     0x98, 0xDF, 0x99, 0x01, 0xE2, 0xE1, 0x52, 0x94);
+DEFINE_GUID(CLSID_IconColorContextMenuHandler, 0xE00A6ADA, 0x8A09, 0x47D1, 
+    0x9C, 0xDA, 0x24, 0x6C, 0x0F, 0xDA, 0xD9, 0x21);
+
+
+HRESULT GetFilePropertyStore(PCWSTR pwszPath, IPropertyStore** ppPropStore)
+{
+    HRESULT hr = S_OK;
+
+    // Get the file's property store
+    IShellItem* pShellItem = NULL;
+    hr = SHCreateItemFromParsingName(pwszPath, NULL, IID_PPV_ARGS(&pShellItem));
+    if (SUCCEEDED(hr))
+    {
+        IPropertyStore* pPropStore;
+        hr = pShellItem->QueryInterface(IID_PPV_ARGS(&pPropStore));
+        *ppPropStore = pPropStore;
+        pShellItem->Release();
+    }
+
+    return hr;
+}
+
+// Forward declaration of WriteColorToComment
+HRESULT WriteColorToComment(PCWSTR pwszPath, const std::wstring& color)
+{
+    HRESULT hr = S_OK;
+
+    // Get the file's property store
+    IPropertyStore* pPropStore = NULL;
+    hr = GetFilePropertyStore(pwszPath, &pPropStore);
+    if (SUCCEEDED(hr))
+    {
+        // Write the color information to the file's comment field
+        PROPVARIANT propVar;
+        propVar.vt = VT_LPWSTR;
+        propVar.pwszVal = const_cast<LPWSTR>(color.c_str());
+        hr = pPropStore->SetValue(PKEY_Comment, propVar);
+        PropVariantClear(&propVar);
+
+        // Save the changes
+        hr = pPropStore->Commit();
+        pPropStore->Release();
+    }
+
+    return hr;
+}
 
 HINSTANCE g_hInst = NULL;
 
@@ -56,7 +103,7 @@ public:
     // IShellIconOverlayIdentifier methods
     IFACEMETHODIMP GetOverlayInfo(PWSTR pwszIconFile, int cchMax, int* pIndex, DWORD* pdwFlags)
     {
-        HRESULT hr = StringCchCopy(pwszIconFile, cchMax, L"IconColorOverlay.dll");
+        HRESULT hr = StringCchCopy(pwszIconFile, cchMax, L"ColorIconOverlay.dll");
         if (SUCCEEDED(hr))
         {
             *pIndex = IDI_OVERLAYICON;
@@ -93,7 +140,7 @@ private:
 
 HRESULT CIconOverlay_CreateInstance(REFIID riid, void** ppv)
 {
-    CIconOverlay* pIconOverlay = new (std::nothrow) CIconOverlay();
+    CIconOverlay* pIconOverlay = new CIconOverlay();
     HRESULT hr = pIconOverlay ? S_OK : E_OUTOFMEMORY;
     if (SUCCEEDED(hr))
     {
@@ -111,7 +158,7 @@ HRESULT RegisterInprocServer(PCWSTR pszModule, const CLSID& clsid,
 
     HRESULT hr;
 
-    wchar_t L"{6C12361D-4679-4B0C-98DF-9901E2E15294}"[MAX_PATH];
+    wchar_t message[] = L"{6C12361D-4679-4B0C-98DF-9901E2E15294}";
 
 
     wchar_t szSubkey[MAX_PATH];
@@ -160,7 +207,7 @@ HRESULT UnregisterInprocServer(const CLSID& clsid)
 {
     HRESULT hr = S_OK;
 
-    WCHAR L"{6C12361D-4679-4B0C-98DF-9901E2E15294}"[MAX_PATH];
+    WCHAR message[] = L"{6C12361D-4679-4B0C-98DF-9901E2E15294}";
 
 
     WCHAR szSubkey[MAX_PATH];
@@ -173,12 +220,13 @@ HRESULT UnregisterInprocServer(const CLSID& clsid)
     return hr;
 }
 // DLL Entry Point
-extern "C" BOOL WINAPI DllMain(HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved)
+BOOL WINAPI DllMain(HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved)
 {
     switch (dwReason)
     {
     case DLL_PROCESS_ATTACH:
         DisableThreadLibraryCalls(hInstance);
+      
         break;
 
     case DLL_THREAD_ATTACH:
@@ -208,24 +256,74 @@ STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, void** ppv)
 
 STDAPI DllRegisterServer()
 {
-    wchar_t szModule[MAX_PATH];
-    if (GetModuleFileName(g_hInst, szModule, ARRAYSIZE(szModule)) == 0)
+    HKEY hKey;
+    LONG lResult = RegCreateKeyEx(HKEY_CLASSES_ROOT, TEXT(".png\\shell\\Icon Color\\DefaultIcon"), 0, NULL, REG_OPTION_NON_VOLATILE, KEY_WRITE, NULL, &hKey, NULL);
+    if (lResult != ERROR_SUCCESS)
     {
-        HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
-        return hr;
+        return HRESULT_FROM_WIN32(lResult);
+    }
+    lResult = RegSetValueEx(hKey, L"{6C12361D-4679-4B0C-98DF-9901E2E15294}", 0, REG_SZ, (LPBYTE)L"C:\\users\\bbmaster123\\desktop\\ColorIconOverlay-main\\x64\\Debug\\ColorIconOverlay.dll", wcslen(L"Icon Color Overlay"));
+    RegCloseKey(hKey);
+    if (lResult != ERROR_SUCCESS)
+    {
+        return HRESULT_FROM_WIN32(lResult);
     }
 
     // Register the in-process component.
+    wchar_t szModule[MAX_PATH];
     HRESULT hr = RegisterInprocServer(szModule, CLSID_IconOverlay,
         L"Icon Color Overlay", L"Apartment");
+    hr = RegisterInprocServer(L"Directory", CLSID_IconColorContextMenuHandler, L"Icon Color Overlay", L"Apartment");
     if (SUCCEEDED(hr))
     {
-        // Register the icon overlay handler.
+        // Register the context menu handler.
         wchar_t szSubkey[MAX_PATH];
-        hr = StringCchPrintf(szSubkey, ARRAYSIZE(szSubkey),
-            L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\ShellIconOverlayIdentifiers\\Your Icon Overlay");
+        hr = StringCchPrintf(szSubkey, ARRAYSIZE(szSubkey), L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\ShellIconOverlayIdentifiers\\Icon Color Overlay");
+        if (SUCCEEDED(hr))
+        {
+            HKEY hKey;
+            LONG lRet = RegCreateKeyEx(HKEY_LOCAL_MACHINE, szSubkey, 0, NULL, REG_OPTION_NON_VOLATILE, KEY_WRITE, NULL, &hKey, NULL);
+            if (lRet == ERROR_SUCCESS)
+            {
+                lRet = RegSetValueEx(hKey, NULL, 0, REG_SZ, (LPBYTE)L"{6C12361D-4679-4B0C-98DF-9901E2E15294}", sizeof(L"{6C12361D-4679-4B0C-98DF-9901E2E15294}"));
+                RegCloseKey(hKey);
+            }
+            hr = HRESULT_FROM_WIN32(lRet);
+        }
+        if (SUCCEEDED(hr))
+        {
+            // Register the context menu handler.
+            wchar_t szSubkey[MAX_PATH];
+            hr = StringCchPrintf(szSubkey, ARRAYSIZE(szSubkey),
+                L"Software\\Microsoft\\Windows\\CurrentVersion\\Shell Extensions\\Approved");
+
+            if (SUCCEEDED(hr))
+            {
+                HKEY hKey;
+                LONG lResult = RegOpenKeyEx(HKEY_LOCAL_MACHINE, szSubkey, 0, KEY_WRITE, &hKey);
+                if (lResult == ERROR_SUCCESS)
+                {
+                    lResult = RegSetValueEx(hKey, L"{6C12361D-4679-4B0C-98DF-9901E2E15294}", 0, REG_SZ, (LPBYTE)L"Icon Color Overlay", sizeof(L"Icon Color Overlay"));
+                    RegCloseKey(hKey);
+                }
+                hr = HRESULT_FROM_WIN32(lResult);
+            }
+        }
+        // register COM object for shortcut menu handler
+            hr = RegisterInprocServer(szModule, CLSID_IconOverlay, L"AppCustomExtensions", L"Apartment");
+            hr = RegisterInprocServer(L"*", CLSID_IconOverlay, L"ContextMenuExt", L"Apartment");
+        if (SUCCEEDED(hr))
+        {
+            // register shortcut menu handler
+            
+        }
+        // register COM object for overlay icon handler
+        hr = RegisterInprocServer(szModule, CLSID_IconOverlay, L"Icon Color Overlay", L"Apartment");
         
+        hr = RegisterInprocServer(szModule, CLSID_IconColorContextMenuHandler, L"Icon Color Overlay", L"Apartment");
+
     }
+    SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);
 
     return hr;
 }
@@ -239,7 +337,7 @@ STDAPI DllUnregisterServer()
         // Unregister the icon overlay handler.
         wchar_t szSubkey[MAX_PATH];
         hr = StringCchPrintf(szSubkey, ARRAYSIZE(szSubkey),
-            L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\ShellIconOverlayIdentifiers\\Color Icon Overlay");
+            L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\ShellIconOverlayIdentifiers\\Icon Color Overlay");
         if (SUCCEEDED(hr))
         {
             LONG lRet = RegDeleteTree(HKEY_LOCAL_MACHINE, szSubkey);
@@ -247,6 +345,9 @@ STDAPI DllUnregisterServer()
                 hr = HRESULT_FROM_WIN32(lRet);
         }
     }
+
+    // Unregister the context menu handler
+    hr = UnregisterInprocServer(CLSID_IconColorContextMenuHandler);
 
     return hr;
 }
@@ -258,50 +359,141 @@ class IconColorContextMenuHandler : public IShellExtInit, public IContextMenu
 public:
     // IUnknown methods
     IFACEMETHODIMP QueryInterface(REFIID riid, void **ppv);
-    IFACEMETHODIMP_(ULONG) AddRef();
-    IFACEMETHODIMP_(ULONG) Release();
+
+    IFACEMETHODIMP_(ULONG) AddRef() { return InterlockedIncrement(&m_refCount); }
+    IFACEMETHODIMP_(ULONG) Release() { return InterlockedDecrement(&m_refCount); }
+
 
     // IShellExtInit methods
     IFACEMETHODIMP Initialize(LPCITEMIDLIST pidlFolder, LPDATAOBJECT pDataObj, HKEY hKeyProgID);
 
+
     // IContextMenu methods
     IFACEMETHODIMP QueryContextMenu(HMENU hMenu, UINT indexMenu, UINT idCmdFirst, UINT idCmdLast, UINT uFlags);
     IFACEMETHODIMP InvokeCommand(LPCMINVOKECOMMANDINFO pici);
-    IFACEMETHODIMP GetCommandString(UINT_PTR idCmd, UINT uType, UINT *pReserved, LPSTR pszName, UINT cchMax);
+    IFACEMETHODIMP GetCommandString(UINT_PTR idCmd, UINT uType, UINT* pReserved, LPSTR pszName, UINT cchMax);
 
     IconColorContextMenuHandler() : m_refCount(1) {}
 
 private:
+    LPDATAOBJECT pDataObj; // Add this member variable
     ~IconColorContextMenuHandler() {}
     long m_refCount;
     std::vector<std::wstring> m_colors{ L"Red", L"Green", L"Blue", L"Yellow", L"Purple", L"Orange", L"None" };
-
+    std::vector<std::wstring> m_files;
     // Helper function to add color options to the context menu
     void AddColorOptions(HMENU hSubMenu);
 };
+IFACEMETHODIMP IconColorContextMenuHandler::GetCommandString(UINT_PTR idCmd, UINT uType, UINT* pReserved, LPSTR pszName, UINT cchMax)
+{
+    // Check if the idCmd is valid
+    if (idCmd < m_colors.size())
+    {
+        switch (uType)
+        {
+        case GCS_HELPTEXTW:
+            // Return the help string for the menu item
+            StringCchCopyW(reinterpret_cast<LPWSTR>(pszName), cchMax, m_colors[idCmd].c_str());
+            break;
+        case GCS_VALIDATEA:
+        case GCS_VALIDATEW:
+            return S_OK;
+        }
+    }
+    return S_OK;
+}
 
+
+
+  // IShellExtInit methods
+IFACEMETHODIMP Initialize(LPCITEMIDLIST pidlFolder, LPDATAOBJECT pDataObj, HKEY hKeyProgID);
 // Implementation of IShellExtInit::Initialize
-// ...
+std::vector<std::wstring> m_files;
+IFACEMETHODIMP IconColorContextMenuHandler::Initialize(LPCITEMIDLIST pidlFolder, LPDATAOBJECT pDataObj, HKEY hKeyProgID)
+{
+    if (pDataObj == NULL)
+    {
+        return E_INVALIDARG;
+    }
+
+    FORMATETC format = { CF_HDROP, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
+    STGMEDIUM medium;
+
+    // pDataObj contains the objects being acted upon. In this case, it is the list of files that were selected.
+    HRESULT hr = pDataObj->GetData(&format, &medium);
+    if (SUCCEEDED(hr))
+    {
+        // Get the list of files from the data object.
+        HDROP hDrop = static_cast<HDROP>(GlobalLock(medium.hGlobal));
+        if (hDrop != NULL)
+        {
+            UINT numFiles = DragQueryFile(hDrop, 0xFFFFFFFF, NULL, 0);
+            for (UINT i = 0; i < numFiles; i++)
+            {
+                wchar_t filePath[MAX_PATH];
+                if (DragQueryFile(hDrop, i, filePath, ARRAYSIZE(filePath)) > 0)
+                {
+                    m_files.push_back(filePath);
+                }
+            }
+
+            GlobalUnlock(medium.hGlobal);
+        }
+
+        ReleaseStgMedium(&medium);
+    }
+
+    return hr;
+}
 
 // Implementation of IContextMenu::QueryContextMenu
-IFACEMETHODIMP IconColorContextMenuHandler::QueryContextMenu(HMENU hMenu, UINT indexMenu, UINT idCmdFirst, UINT idCmdLast, UINT uFlags)
+HRESULT IconColorContextMenuHandler::QueryContextMenu(HMENU hMenu, UINT indexMenu, UINT idCmdFirst, UINT idCmdLast, UINT uFlags)
 {
-    // Only display the context menu when right-clicking
     if (uFlags & CMF_DEFAULTONLY)
+    {
         return MAKE_HRESULT(SEVERITY_SUCCESS, FACILITY_NULL, 0);
+    }
 
-    HMENU hSubMenu = CreatePopupMenu();
-    if (!hSubMenu)
-        return E_OUTOFMEMORY;
+    UINT uID = idCmdFirst;
+    HMENU hSubMenu = CreateMenu();
 
-    AddColorOptions(hSubMenu);
+    for (size_t i = 0; i < m_colors.size(); ++i)
+    {
+        MENUITEMINFO mii = { 0 };
+        mii.cbSize = sizeof(MENUITEMINFO);
+        mii.fMask = MIIM_ID | MIIM_STRING; // Set the MIIM_ID flag
+        mii.wID = uID++; // Set the menu item ID
+        mii.dwTypeData = const_cast<LPWSTR>(m_colors[i].c_str());
+        InsertMenuItem(hSubMenu, 0, TRUE, &mii); // Insert the menu item
+    }
 
-    InsertMenu(hMenu, indexMenu, MF_BYPOSITION | MF_POPUP, (UINT_PTR)hSubMenu, L"Icon Color");
-    return MAKE_HRESULT(SEVERITY_SUCCESS, FACILITY_NULL, m_colors.size());
+    MENUITEMINFO miiSubmenu = { 0 };
+    miiSubmenu.cbSize = sizeof(MENUITEMINFO);
+    miiSubmenu.fMask = MIIM_SUBMENU | MIIM_STRING; // Set the MIIM_SUBMENU flag
+    miiSubmenu.hSubMenu = hSubMenu; // Set the submenu handle
+    miiSubmenu.dwTypeData = const_cast<LPWSTR>(L"Color Options"); // Set the submenu title
+    InsertMenuItem(hMenu, indexMenu, TRUE, &miiSubmenu); // Insert the submenu
+
+    return MAKE_HRESULT(SEVERITY_SUCCESS, FACILITY_NULL, 1);
+}
+
+
+// Definition of ChangeIcon
+HRESULT ChangeIcon(PCWSTR pwszPath, const std::wstring& color) {
+    return WriteColorToComment(pwszPath, color);
 }
 
 IFACEMETHODIMP IconColorContextMenuHandler::InvokeCommand(LPCMINVOKECOMMANDINFO pici)
 {
+
+    const UINT ID_RED = 100;
+    const UINT ID_GREEN = 101;
+    const UINT ID_BLUE = 102;
+    const UINT ID_YELLOW = 103;
+    const UINT ID_PURPLE = 104;
+    const UINT ID_ORANGE = 105;
+    const UINT ID_NONE = 106;
+
     // Ensure this is not an offset but the actual command ID
     if (!HIWORD(pici->lpVerb))
     {
@@ -311,12 +503,33 @@ IFACEMETHODIMP IconColorContextMenuHandler::InvokeCommand(LPCMINVOKECOMMANDINFO 
         switch (idCmd)
         {
             case ID_RED:
-              ChangeIcon("path_to_red_icon.ico");
-    break;
+                for (const auto& file : m_files)
+                    ChangeIcon(file.c_str(), L"Red");
+                break; 
             case ID_GREEN:
-               ChangeIcon("path_to_Green_icon.ico");
-    break;
-            // ... other cases for different colors
+                for (const auto& file : m_files)
+                    ChangeIcon(file.c_str(), L"Green");
+                break; 
+            case ID_BLUE:
+                for (const auto& file : m_files)
+                    ChangeIcon(file.c_str(), L"Blue");
+                break;               
+            case ID_YELLOW:
+                for (const auto& file : m_files)
+                    ChangeIcon(file.c_str(), L"Yellow");
+                break;
+            case ID_PURPLE:
+                for (const auto& file : m_files)
+                    ChangeIcon(file.c_str(), L"Purple");
+                break;
+            case ID_ORANGE:
+                for (const auto& file : m_files)
+                    ChangeIcon(file.c_str(), L"Orange");
+                break;
+            case ID_NONE:
+                for (const auto& file : m_files)
+                    ChangeIcon(file.c_str(), L"None");
+                break;
             default:
                 return E_FAIL; // Command ID not recognized
         }
@@ -324,45 +537,39 @@ IFACEMETHODIMP IconColorContextMenuHandler::InvokeCommand(LPCMINVOKECOMMANDINFO 
     }
     return E_FAIL; // If the command ID is not recognized
 }
-
+enum ColorIDs {
+    ID_RED = 100,
+    ID_GREEN,
+    ID_BLUE,
+    ID_YELLOW,
+    ID_PURPLE,
+    ID_ORANGE,
+    ID_NONE
+};
 
 // Implementation of IconColorContextMenuHandler::AddColorOptions
 void IconColorContextMenuHandler::AddColorOptions(HMENU hSubMenu)
 {
-    for (size_t i = 0; i < m_colors.size(); ++i)
-    {
-        InsertMenu(hSubMenu, i, MF_BYPOSITION, i, m_colors[i].c_str());
-    }
+    MENUITEMINFO mii = { 0 };
+    mii.cbSize = sizeof(MENUITEMINFO);
+    mii.fMask = MIIM_ID | MIIM_STRING | MIIM_FTYPE;
+    mii.wID = ID_RED;
+    mii.dwTypeData = const_cast<LPWSTR>(L"Red");
+    mii.fType = MFT_STRING;
+    InsertMenuItem(hSubMenu, 0, TRUE, &mii);
 }
 
-HRESULT ChangeIcon(PCWSTR pwszPath, const std::wstring& color) {
-    // Write the new color to the file's metadata
-    HRESULT WriteColorToComment(PCWSTR pwszPath, const std::wstring& color) {
-    IPropertyStore* pPropStore = nullptr;
-    HRESULT hr = SHGetPropertyStoreFromParsingName(pwszPath, NULL, GPS_READWRITE, IID_PPV_ARGS(&pPropStore));
-    if (SUCCEEDED(hr)) {
-        PROPVARIANT propvarValue;
-        InitPropVariantFromString(color.c_str(), &propvarValue);
-        hr = pPropStore->SetValue(PKEY_Comment, propvarValue);
-        if (SUCCEEDED(hr)) {
-            hr = pPropStore->Commit();
-        }
-        PropVariantClear(&propvarValue);
-    }
-    if (pPropStore) pPropStore->Release();
-    return hr;
-}
 
 
     // Read the color back to confirm the change
-    std::wstring confirmedColor;
-    hr = ReadColorFromMetadata(pwszPath, confirmedColor);
-    if (FAILED(hr)) {
-        return hr; // Return the error code if reading failed
-    }
+    //std::wstring confirmedColor;
+    //hr = ReadColorFromMetadata(pwszPath, confirmedColor);
+   // if (FAILED(hr)) {
+       // return hr; // Return the error code if reading failed
+   // }
 
     // Optionally, compare 'color' and 'confirmedColor' to ensure they match
     // ...
 
-    return S_OK; // Return success code if everything went well
-}
+    //return S_OK; // Return success code if everything went well
+//}
